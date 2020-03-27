@@ -1,0 +1,64 @@
+#+TITLE: Tree Transformer for Label-Sensitive Constituency Parsing
+#+OPTIONS: toc:nil
+#+LATEX_HEADER: \usepackage{parskip}
+* Tree Transformer
+We extend the architecture of the /Tree Transformer/ proposed by [[https://arxiv.org/abs/1909.06639][Yau-Shian Wang et al.]]
+which introduces the notion of an additional "Constituent Attention" module that implements
+self-attention between two adjacent words to induce tree structures on sequential language
+data. We define an additional *label prior* on top of the constituent prior defined by the paper.
+** Constituent Attention
+The original transformer architecture computes a matrix of self-attention probabilities $E$ using a
+set of /query/ and /key/ matrices as follows:
+\[E = softmax \left( \frac{QK^T}{\sqrt{d_k}} \right)\]
+where, $E$ is a matrix of size $[N \times N]$ and $Q,K$ are matrices of size $[N \times d_k]$
+with $N$ being the size of the input sequence and $d_k$ being the dimension of the word vectors in
+$Q,K$
+
+
+We embed the tree-like constituent structure of sentences by computing a /constituent prior/ $C$:
+\[E = C \odot softmax \left( \frac{QK^T}{\sqrt{d_k}} \right)\]
+where, $\odot$ is an element-wise product.
+
+We induce this prior at every layer uniquely and implement a constituent attention to generate it
+\[a = \{a_1, \ldots, a_i, \ldots, a_N\}\]
+where, $a_i$ is the probability that the words $w_i$ and $w_{i+1}$ are part of the same constituent.
+
+Thus, we can compute the constituent prior as the following
+\[C_{i,j} = {\displaystyle \prod_{k=i}^{j-1} a_k}\]
+and to handle the issue of vanishing probabilities we use a log-sum
+\[C_{i,j} = {\displaystyle e^{\sum_{k=i}^{j-1} a_k}}\]
+The sequence $a$ is obtained using the following:
+*** Neighboring Attention
+The score $s_{i,i+1}$ indicating that $w_i$ links to $w_{i+1}$ is computed as follows:
+\[s_{i,i+1} = \frac{q_i \cdot k_{i+1}}{d}\]
+where, $q_i$ is the query vector of $w_i$ with dimension $d_{model}$, $k_{i+1}$ is the 
+key vector of $w_{i+1}$ with dimension $d_{model}$ and $d = d_{model}/2$
+
+Note that $d_{model} = h \times d_k$ where, $h$ is the number of heads in the self-attention.
+
+We assume that each word links *only* to the words next to it (contiguous constituents) with
+possibly different probabilities,
+\[p_{i,i+1}, p_{i, i-1} = softmax(s_{i,i+1}, s_{i,i-1})\]
+\[\hat{a_i} = \sqrt{p_{i,i+1} \times p_{i,i-1}}\]
+*** Hierarchical Constraint
+We need the constituent relations from a lower layer to merge to a higher layer and thus induce
+the following constraint
+\[a_k^l = a_k^{l-1} + (1 - a_k^{l-1}) \hat{a_k}^l\]
+** Label Prior
+We are accounting for the information of words being a part of a constituent with neighboring
+words using the constituent prior. We add a new label attention module to
+incorporate the label information.
+
+Consider, a query vector for each label $l$ as $q_l$. Let $K_l, V_l$ be the
+label-specific key and value matrices for this module. We compute a label
+attention as follows:
+\[a_{l} = softmax \left( \frac{q_l \cdot K_l}{d} \right)\]
+We use this attention vector to compute a label-context vector $c_l$
+\[c_l = a_l \odot V_l\]
+Each head in the multi-head label attention is used to attend to each label
+and the resultant context vectors are concatenated and added to the input embedding of the subsequent self-attention
+module with the embedded constituent prior as shown above.
+
+** Unsupervised Parsing
+The link probability $a$ after training can be used to parse the sentence. Instead of choosing the
+link probability from a particular layer, we utilise the hierarchical structure of $a$ across layers.
