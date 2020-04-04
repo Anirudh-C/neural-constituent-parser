@@ -62,3 +62,6 @@ module with the embedded constituent prior as shown above.
 ** Unsupervised Parsing
 The link probability $a$ after training can be used to parse the sentence. Instead of choosing the
 link probability from a particular layer, we utilise the hierarchical structure of $a$ across layers.
+* CRF
+\[score(w,(i,j,k),rule) = g(H \times [tokenids(w[i:j]) : tokenids(w[j:k])])^T \times W \times rule\]
+\[L(H,W) = \sum_{d=1}^D \sum_{rule, (i,j,k) \in T_d} score(w_d,(i,j,k),rule)\]
