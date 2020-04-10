@@ -1,54 +1,111 @@
-#+TITLE: Tree Transformer for Label-Sensitive Constituency Parsing
+#+TITLE: Neural Constituency Parsing
 #+OPTIONS: toc:nil
+#+AUTHOR: Anirudh C (IMT2017006) @@latex:\\@@ Bishal Pandia (IMT2017010) @@latex:\\@@ Ananth Shreekumar (IMT2016129)
 #+LATEX_HEADER: \usepackage{parskip}
+We suggest 2 ideas to perform constituency parsing: a score based parser and a transformer based 
+architecture.
+* Score Based
+We attempt to learn a score function that induces a recursive split in a given sentence into the
+phrase structure.
+
+Our score function is dependent on the sentence, spans in the sentence (indices) and the rules.
+A span $s$ is a 4-tuple $(i,j,k,l)$, where $(i,j)$ and $(k,l)$ defines the phrases and a rule
+is an encoded phrase grammar rule derived from Penn Treebank.
+
+*Note*: We assume that each phrase splits into atmost 2 phrases. Thus, we use the Chomsky Normal Form
+of the phrase structure trees in Penn Treebank.
+
+\[score(w,s,r; W_1, W_2) = g(W_1 w[s])^T W_2 r\]
+where, $w$ is a candidate sentence, $s$ is a span of the form above, $w[s]$ is the sentence
+representation for the given span $s$,$r$ is the encoded rule and $g$ is an element-wise
+non-linearity (ReLU)
+
+$w[s]$ and $r$ are vectors of dimensions $d_w$ and $d_r$, thus making $W_1$ a matrix of weights
+of dimension $d \times d_w$ and $W_2$ a matrix of weights of dimension $d \times d_r$.
+
+** Encodings
+The sentence representation $w[(i,j,k,l)]$ is a vector that is the concatenation of the ELMo span
+representations for $w[i:j]$ and $w[k:l]$.
+\[w[i:j] = [\overrightarrow{h_j} - \overrightarrow{h_{i-1}} ; \overleftarrow{h_{j+1}} - \overleftarrow{h_i}]\]
+
+For all labels (non-terminals) in the dataset, we one-hot encode each label as a vector.
+For a production rule, $r$ we encode the rule as the sum of the encoded vector
+for each of the non-terminals in the rule. To ensure we can compute the rule given the encoding,
+we encode the position of the non-terminal in the rule as well.
+
+For example, for a rule $r: A \rightarrow B C$ we encode the rule as follows:
+\[encode(r) = a \times 1h(A) + b \times 1h(B) + c \times 1h(C)\]
+where, $1h(\cdot)$ is the one-hot encoded vector for each non-terminal.
+
+For a given encoded vector $r$, the corresponding rule is of one of the following forms
+- $A \rightarrow t$
+
+  $t$ is a terminal and thus $r = (0 \ldots a \ldots 0)^T$
+- $A \rightarrow A$
+
+  $r = (0 \ldots a+b \ldots 0)^T$
+- $A \rightarrow B$
+
+  $r = (0 \ldots a \ldots b \ldots 0)^T$ or $r = (0 \ldots b \ldots a \ldots 0)^T$
+- $A \rightarrow A A$
+
+  $r = (0 \ldots a+b+c \ldots 0)^T$
+- $A \rightarrow B B$
+  
+  $r = (0 \ldots a \ldots b+c \ldots 0)^T$ or $r = (0 \ldots b+c \ldots a \ldots 0)^T$
+- $A \rightarrow B C$
+
+  $r = (0 \ldots a \ldots b \ldots c \ldots 0)^T$ and all possible permutations of positions for
+  $a$, $b$ and $c$
+
+We choose the values of $a,b,c$ such that there are no ambiguities in the rule encodings above.
+The values we choose for $a,b,c$ are $3^0, 3^1$ and $3^9$.
+
+** Training
+For a given sentence $w$, the parse tree $T$ is conditioned on the sentence as follows:
+\[P(T|w;W_1,W_2) \propto e^{{\displaystyle \sum_{(r,s) \in T}score(w,s,r;W_1,W_2)}}\]
+
+Thus, we can learn the weights using a negative log-likelihood objective.
+\[L(W_1,W_2) = - \sum_{d=1}^D \sum_{(r,s) \in T_d} score(w_d,s,r;W_1,W_2)\]
+where, $D$ is the number of samples in the training dataset and $T_d, w_d$ are sample ground truths.
+
+We model the weight matrices $W_1$ and $W_2$ as multilayer perceptrons. We use backpropagation to 
+compute the loss differentials and gradient descent to update the perceptron weights.
+
+** Inference
+Given a new sentence, we compute the parse tree as follows:
+
+At each step, we compute the ideal span and rule as follows:
+\[s*, r* = arg \max score(w,s,r;W_1,W_2)\]
+
+To compute the above arg max we use dynamic programming to compute the best scores to infer the tree.
+- To start with we define $s_{best}(i,i+1,j,j+1)$ for all $i < j - 1$ as
+  \[s_{best}(i,i+1,j,j+1) = \max_r s(w,(i,i+1,j,j+1), r; W_1,W_2)\]
+  The rule to choose is the argument $r$ for which the above is maximised.
+- With our DP we wish to compute the function $s_{best}(0,n-3,n-2,n-1,r)$ where $n$ is the size of the
+  input sentence.
+- We reduce the above problem into smaller problems by allowing the indices $(i,j,k,l)$ to 
+  move right, left, left and right respectively. Thus, there are $2^4 = 16$ possible sub-problems
+  to maximise over. Let the set of $s_{best}$ scores for all these smaller problems be $S_{best}$
+- The recursion to express this dynamic programming algorithm is:
+  \[s_{best}(i,j,k,l) = \max_r \{ s(w, (i,j,k,l),r), \max \{S_{best}\}\}\]
+
+We build a bottom up model and using the best score to split the sentence into a tree.
+
+The code and the results for this model are at this [[https://github.com/Anirudh-C/neural-constituent-parser][repository]].
+
 * Tree Transformer
+We also have another idea (which we could not implement/train) but wish to present nevertheless.
+
 We extend the architecture of the /Tree Transformer/ proposed by [[https://arxiv.org/abs/1909.06639][Yau-Shian Wang et al.]]
 which introduces the notion of an additional "Constituent Attention" module that implements
 self-attention between two adjacent words to induce tree structures on sequential language
 data. We define an additional *label prior* on top of the constituent prior defined by the paper.
 ** Constituent Attention
-The original transformer architecture computes a matrix of self-attention probabilities $E$ using a
-set of /query/ and /key/ matrices as follows:
-\[E = softmax \left( \frac{QK^T}{\sqrt{d_k}} \right)\]
-where, $E$ is a matrix of size $[N \times N]$ and $Q,K$ are matrices of size $[N \times d_k]$
-with $N$ being the size of the input sequence and $d_k$ being the dimension of the word vectors in
-$Q,K$
-
-
-We embed the tree-like constituent structure of sentences by computing a /constituent prior/ $C$:
-\[E = C \odot softmax \left( \frac{QK^T}{\sqrt{d_k}} \right)\]
-where, $\odot$ is an element-wise product.
-
-We induce this prior at every layer uniquely and implement a constituent attention to generate it
-\[a = \{a_1, \ldots, a_i, \ldots, a_N\}\]
-where, $a_i$ is the probability that the words $w_i$ and $w_{i+1}$ are part of the same constituent.
-
-Thus, we can compute the constituent prior as the following
-\[C_{i,j} = {\displaystyle \prod_{k=i}^{j-1} a_k}\]
-and to handle the issue of vanishing probabilities we use a log-sum
-\[C_{i,j} = {\displaystyle e^{\sum_{k=i}^{j-1} a_k}}\]
-The sequence $a$ is obtained using the following:
-*** Neighboring Attention
-The score $s_{i,i+1}$ indicating that $w_i$ links to $w_{i+1}$ is computed as follows:
-\[s_{i,i+1} = \frac{q_i \cdot k_{i+1}}{d}\]
-where, $q_i$ is the query vector of $w_i$ with dimension $d_{model}$, $k_{i+1}$ is the 
-key vector of $w_{i+1}$ with dimension $d_{model}$ and $d = d_{model}/2$
-
-Note that $d_{model} = h \times d_k$ where, $h$ is the number of heads in the self-attention.
-
-We assume that each word links *only* to the words next to it (contiguous constituents) with
-possibly different probabilities,
-\[p_{i,i+1}, p_{i, i-1} = softmax(s_{i,i+1}, s_{i,i-1})\]
-\[\hat{a_i} = \sqrt{p_{i,i+1} \times p_{i,i-1}}\]
-*** Hierarchical Constraint
-We need the constituent relations from a lower layer to merge to a higher layer and thus induce
-the following constraint
-\[a_k^l = a_k^{l-1} + (1 - a_k^{l-1}) \hat{a_k}^l\]
+The constituent attention module lets each word attend to the neighboring words to define the
+"score" or "probability" of forming a constituent with those words. The information missing here
+is the label information, which we induce using a label attention module.
 ** Label Prior
-We are accounting for the information of words being a part of a constituent with neighboring
-words using the constituent prior. We add a new label attention module to
-incorporate the label information.
-
 Consider, a query vector for each label $l$ as $q_l$. Let $K_l, V_l$ be the
 label-specific key and value matrices for this module. We compute a label
 attention as follows:
@@ -57,11 +114,11 @@ We use this attention vector to compute a label-context vector $c_l$
 \[c_l = a_l \odot V_l\]
 Each head in the multi-head label attention is used to attend to each label
 and the resultant context vectors are concatenated and added to the input embedding of the subsequent self-attention
-module with the embedded constituent prior as shown above.
+module with the embedded constituent prior.
+** Training and Parsing
+We train this model using the same training objective of the Tree-Transformer and perform parsing
+as described in the paper. Additionally to infer the label, we use the span representation $s_{ij}$
+for positions $i,j$ inferred from the unsupervised parsing from the paper and compute the
+contribution of each label vector to the span (dot-product). We normalise and average to get
+individual label scores for each span and assign the label with the highest score.
 
-** Unsupervised Parsing
-The link probability $a$ after training can be used to parse the sentence. Instead of choosing the
-link probability from a particular layer, we utilise the hierarchical structure of $a$ across layers.
-* CRF
-\[score(w,(i,j,k),rule) = g(H \times [tokenids(w[i:j]) : tokenids(w[j:k])])^T \times W \times rule\]
-\[L(H,W) = \sum_{d=1}^D \sum_{rule, (i,j,k) \in T_d} score(w_d,(i,j,k),rule)\]
