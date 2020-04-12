@@ -1,56 +1,28 @@
 from nltk.tree import Tree
-
-def phraseCount(tree):
-    """
-    Counts number of phrases in subtree
-    :param: tree
-    """
-    count = 0
-    for child in tree:
-        if isinstance(child, Tree):
-            count += 1
-
-    return count
-
-def phraseIndices(tree):
-    """
-    Returns indices of first and second phrase in subtree
-    :param: tree
-    """
-    flag = False
-    for i, child in enumerate(tree):
-        if isinstance(child, Tree):
-            if flag:
-                return first, i
-            else:
-                first = i
-                flag = True
+import numpy as np
 
 def cnf(sentence):
     """
     Returns CNF of phrase tree
     :param: sentence
     """
-    node = sentence.label()
-    if phraseCount(sentence) > 2:
-        # Store current children
-        children = [subtree for subtree in sentence]
+    if isinstance(sentence, Tree):
+        node = sentence.label()
+        if len(sentence) > 2:
+            # Store current children
+            children = [subtree for subtree in sentence]
 
-        # Delete children for given sentence
-        sentence[:] = []
+            # Delete children for given sentence
+            sentence[:] = []
 
-        # Compute indices of first and second phrase in children
-        first, second = phraseIndices(children)
+            # Update sentence
+            sentence[:] = children[:1] + [Tree(node, children[1:])]
 
-        # Update sentence
-        sentence[:] = children[:second] + [Tree(node, children[second:])]
-
-        # Compute CNF for the next level of phrases
-        sentence[first] = cnf(sentence[first])
-        sentence[second] = cnf(sentence[second])
-    else:
-        for i, child in enumerate(sentence):
-            if isinstance(child, Tree):
+            # Compute CNF for the next level of phrases
+            sentence[0] = cnf(sentence[0])
+            sentence[1] = cnf(sentence[1])
+        else:
+            for i, child in enumerate(sentence):
                 sentence[i] = cnf(sentence[i])
 
     return sentence
@@ -77,9 +49,11 @@ def collapseUnary(tree):
                 for child in node:
                     nodeList.append(child)
 
-def collapse(tree):
+    return tree
+
+def collapseEmpty(tree):
     """
-    Collapses empty labels and paths in tree with the same label
+    Collapses empty labels in tree
     :param: tree
     """
     for i, child in enumerate(tree):
@@ -87,10 +61,46 @@ def collapse(tree):
             if not child:
                 tree.remove(child)
             else:
-                tree[i] = collapse(child)
+                tree[i] = collapseEmpty(child)
 
-    collapseUnary(tree)
     return tree
+
+def collapse(tree, count=4):
+    """
+    Combines all the collapse operations
+    :param: tree
+    :param: count - number of times to run collapse due to
+    the operations of unary collapse and empty collapse being
+    linked
+    """
+    if count:
+        return collapse(collapseUnary(collapseEmpty(tree)), count-1)
+    return collapseEmpty(collapseUnary(tree))
+
+def spanRepresentation(wordVectors, span):
+    """
+    Given the word vectors for a sentence and a span
+    return the span representation
+    """
+    if len(span) == 4:
+        i,j,k,l = span
+    else:
+        raise ValueError
+    if i:
+        firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0] - np.split(wordVectors[i-1], 2)[0],
+                                    np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
+    else:
+        firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0],
+                                    np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
+
+    if l == len(wordVectors):
+        secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
+                                     - np.split(wordVectors[k], 2)[1]))
+    else:
+        secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
+                                     np.split(wordVectors[l+1], 2)[1] - np.split(wordVectors[k], 2)[1]))
+
+    return np.concatenate((firstSpan, secondSpan))
 
 if __name__=="__main__":
     test = Tree("S", ["a", Tree("NP", ["b", Tree("NP", ["c"])]), "d", "e", Tree("VP", ["f"]), "g", "h", Tree("NP", ["i", Tree("NP", ["j"]), Tree("NP", ["k"]), Tree("NP", ["l"])])])
@@ -98,6 +108,4 @@ if __name__=="__main__":
     test.draw()
     print("CNF Tree:")
     cnf(test).draw()
-    test2 = Tree("S", ["a", Tree("NP", [Tree("NP", ["b"])]), Tree("VP", [Tree("NP", ["c"]), Tree("VP", [Tree("VP", ["d"])])])])
-    test2.draw()
-    collapse(test2).draw()
+    
