@@ -84,23 +84,32 @@ def spanRepresentation(wordVectors, span):
     """
     if len(span) == 4:
         i,j,k,l = span
+
+        if i and j < len(wordVectors) - 1:
+            firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0] - np.split(wordVectors[i-1], 2)[0],
+                                    np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
+
+        elif j == len(wordVectors) - 1:
+            firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0] - np.split(wordVectors[i-1], 2)[0],
+                                        - np.split(wordVectors[i], 2)[1]))
+
+        else:
+            firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0],
+                                        np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
+
+        if l == len(wordVectors) - 1:
+            secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
+                                         - np.split(wordVectors[k], 2)[1]))
+
+        else:
+            secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
+                                         np.split(wordVectors[l+1], 2)[1] - np.split(wordVectors[k], 2)[1]))
+
+        return np.concatenate((firstSpan, secondSpan))
     else:
         raise ValueError
-    if i:
-        firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0] - np.split(wordVectors[i-1], 2)[0],
-                                    np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
-    else:
-        firstSpan = np.concatenate((np.split(wordVectors[j], 2)[0],
-                                    np.split(wordVectors[j+1], 2)[1] - np.split(wordVectors[i], 2)[1]))
 
-    if l == len(wordVectors):
-        secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
-                                     - np.split(wordVectors[k], 2)[1]))
-    else:
-        secondSpan = np.concatenate((np.split(wordVectors[l], 2)[0] - np.split(wordVectors[k-1], 2)[0],
-                                     np.split(wordVectors[l+1], 2)[1] - np.split(wordVectors[k], 2)[1]))
 
-    return np.concatenate((firstSpan, secondSpan))
 
 if __name__=="__main__":
     test = Tree("S", ["a", Tree("NP", ["b", Tree("NP", ["c"])]), "d", "e", Tree("VP", ["f"]), "g", "h", Tree("NP", ["i", Tree("NP", ["j"]), Tree("NP", ["k"]), Tree("NP", ["l"])])])
@@ -108,4 +117,3 @@ if __name__=="__main__":
     test.draw()
     print("CNF Tree:")
     cnf(test).draw()
-    

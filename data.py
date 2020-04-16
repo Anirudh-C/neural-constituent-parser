@@ -5,11 +5,10 @@ import re
 import itertools
 
 import numpy as np
-import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from allennlp.commands.elmo import ElmoEmbedder
 
-from utils import cnf, collapse
+from utils import cnf, collapse, spanRepresentation
 
 datapaths = ["../parsed/wsj_{0:04}.prd".format(num) for num in range(1, 200)]
 
@@ -17,13 +16,13 @@ class TreebankDataset(Dataset):
     """
     Penn Treebank Dataset that returns (s,r) for each sentence
     """
-    def __init__(self, pathString, computeVecs=False):
+    def __init__(self, pathString="../parsed/wsj_{0:04}.prd", computeVecs=False):
         """
         Initiates ground truth for PTB after removing function labels, null values
         and converting to CNF
         :param: pathString - string that defines the treebank files to load from
         """
-        self.computeVecs = computeVecs
+        self._computeVecs = computeVecs
         self._datapaths = [pathString.format(num) for num in range(1,200)]
         sentences = itertools.chain(*map(treebank.parsed_sents, self._datapaths))
         self.filterSentences(list(sentences))
@@ -40,9 +39,20 @@ class TreebankDataset(Dataset):
 
         self._spans = [self.getSpanIndices(self.getSpans(sent), sent.leaves()) for sent in self._sentences]
         print("Computed spans")
+
+        # Compute buckets
+        self._buckets = [(0, len(self._spans[0]))]
+        for i in range(1, len(self._sentences)):
+            self._buckets.append((self._buckets[i-1][1],
+                                       self._buckets[i-1][1] + len(self._spans[i])))
+
+        self._size = 0
+        for span in self._spans:
+            self._size += len(span)
+
         print("Loading ELMo Embeddings...")
         self.elmo = ElmoEmbedder()
-        if self.computeVecs:
+        if self._computeVecs:
             print("Computing word vectors...")
             self._wordVectors = [self.elmo.embed_sentence(sent.leaves())
                                  for sent in self._sentences]
@@ -59,19 +69,40 @@ class TreebankDataset(Dataset):
                 labels = labels + self.getLabel(subtree)
         return labels
 
+    def getSRId(self, idx):
+        """
+        Given an index compute the sentence and rule id
+        :param: idx
+        """
+        for bucket in self._buckets:
+            if idx in range(*bucket):
+                sId = self._buckets.index(bucket)
+
+        return sId, idx - self._buckets[sId][0]
+
     def __len__(self):
         """
         Returns length of dataset, that is, number of sentences
         """
-        return len(self._sentences)
+        return self._size
 
     def __getitem__(self, idx):
         """
         Returns an element from the ground truth, that is, a sentence in (s,r) form.
         """
+        sId, rId = self.getSRId(idx)
+
+        span = np.zeros(2048)
+        span[:4] = self._spans[sId][rId]
+        span[4:30] = self._rules[sId][rId]
+
         if self._computeVecs:
-            return self._wordVectors[idx], self._spans[idx], self._rules[idx]
-        return self.elmo.embed_sentence(self._sentences[idx]), self._spans[idx], self._rules[idx]
+            wordVecs = spanRepresentation(self._wordVectors[sId], self._spans[sId][rId])
+        else:
+            wordVecs = spanRepresentation(self.elmo.embed_sentence(self._sentences[sId].leaves())[2],
+                                          self._spans[sId][rId])
+
+        return np.stack((wordVecs, span))
 
     # Functions to encode the input
     def oneHotEncode(self, label):
@@ -120,7 +151,7 @@ class TreebankDataset(Dataset):
                     spans += self.getSpans(child)
         return spans
 
-    def spanIndices(self, span, sentence, firstPhrase=None):
+    def spanIndices(self, span, sentence, givenFirst=None):
         """
         Given an individual span return the span indices
         in the sentence as (i,j)
@@ -128,30 +159,19 @@ class TreebankDataset(Dataset):
         :param: sentence
         """
         if isinstance(span, str):
-            occ = [i for i,x in enumerate(sentence) if x == span]
+            span = [span]
 
-            count = 0
-            i = occ[count]
-            while firstPhrase and i < firstPhrase[1] \
-                  and len(occ) > 1 and count < len(occ) - 1:
-                count += 1
-                i = occ[count]
-            return i, i+1
-        else:
-            occ = [i for i,x in enumerate(sentence) if x == span[0]]
+        subLen = len(span)
+        for idx in [i for i,x in enumerate(sentence) if x == span[0]]:
+            if sentence[idx:idx+subLen] == span:
+                i = idx
+                j = idx + subLen - 1
+                if givenFirst and i <= givenFirst[0] and j <= givenFirst[0]:
+                    continue
+                else:
+                    break
 
-            count = 0
-            i = occ[count]
-            while firstPhrase and i < firstPhrase[1] \
-                  and len(occ) > 1 and count < len(occ) - 1:
-                count += 1
-                i = occ[count]
-
-            if len(span) == 1:
-                j = i+1
-            else:
-                j = len(sentence) - 1 - sentence[::-1].index(span[-1])
-            return i,j
+        return i,j
 
     def getSpanIndices(self, spans, sentence):
         """
@@ -223,4 +243,4 @@ class TreebankDataset(Dataset):
 
 if __name__=="__main__":
     treebank = TreebankDataset("../parsed/wsj_{0:04}.prd")
-    print("Loaded treebank with {} sentences.".format(len(treebank)))
+    print("Loaded treebank with {} sentences.".format(len(treebank._sentences)))
