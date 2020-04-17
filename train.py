@@ -5,7 +5,8 @@ from torch.utils.data import DataLoader, random_split
 from data import TreebankDataset
 from model import treeLoss, Score
 
-def train(batch=64, epochs=2, split=0.8, cuda=True):
+def train(batch=128, epochs=2, split=0.8, cuda=True):
+    log = open('logs/run-1.log', 'w')
     # Create train test split
     treebank = TreebankDataset(train=True)
     trainSize = int(split * len(treebank))
@@ -29,6 +30,7 @@ def train(batch=64, epochs=2, split=0.8, cuda=True):
 
         # Train
         print("Training..")
+        epochLoss = 0.0
         runningLoss = 0.0
         for i, batch in enumerate(tqdm(trainLoader)):
             scores = model(batch.to(device, dtype=torch.float))
@@ -38,7 +40,13 @@ def train(batch=64, epochs=2, split=0.8, cuda=True):
             loss.backward()
             optimizer.step()
 
+            epochLoss += loss.item()
             runningLoss += loss.item()
+
+            if i % 10 == 9:
+                print("[%d, %d] loss: %.3f" %
+                      (epoch+1,i+1, runningLoss / 10), file=log)
+                runningLoss = 0.0
 
         print("[%d, %d] loss: %.3f" %
               (epoch+1, epochs, runningLoss / trainSize))
@@ -56,7 +64,7 @@ def train(batch=64, epochs=2, split=0.8, cuda=True):
         print("[%d %d] val loss: %.3f" %
               (epoch+1, epochs, testLoss / testSize))
 
-    torch.save(model.state_dict(), 'models/run-1.pth')
+    torch.save(model.state_dict(), 'models/run-1.pt')
 
 if __name__ == "__main__":
     train()
