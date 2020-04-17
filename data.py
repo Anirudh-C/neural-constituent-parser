@@ -16,16 +16,21 @@ class TreebankDataset(Dataset):
     """
     Penn Treebank Dataset that returns (s,r) for each sentence
     """
-    def __init__(self, pathString="../parsed/wsj_{0:04}.prd", computeVecs=False):
+    def __init__(self, train=True, pathString="../parsed/wsj_{0:04}.prd", computeVecs=False):
         """
         Initiates ground truth for PTB after removing function labels, null values
         and converting to CNF
         :param: pathString - string that defines the treebank files to load from
         """
+        self._train = train
         self._computeVecs = computeVecs
         self._datapaths = [pathString.format(num) for num in range(1,200)]
         sentences = itertools.chain(*map(treebank.parsed_sents, self._datapaths))
         self.filterSentences(list(sentences))
+
+        # Number of train samples
+        self._samples = 900
+
         print("Filtered Dataset")
 
         self._labels = []
@@ -34,7 +39,7 @@ class TreebankDataset(Dataset):
         self._labels = sorted(list(set(self._labels)))
 
         self._rules = np.array([[self.encodeRule(rule) for rule in sent.productions()]
-                       for sent in self._sentences])
+                                for sent in self._sentences])
         print("Encoded Rules")
 
         self._spans = [self.getSpanIndices(self.getSpans(sent), sent.leaves()) for sent in self._sentences]
@@ -45,10 +50,6 @@ class TreebankDataset(Dataset):
         for i in range(1, len(self._sentences)):
             self._buckets.append((self._buckets[i-1][1],
                                        self._buckets[i-1][1] + len(self._spans[i])))
-
-        self._size = 0
-        for span in self._spans:
-            self._size += len(span)
 
         print("Loading ELMo Embeddings...")
         self.elmo = ElmoEmbedder()
@@ -74,17 +75,25 @@ class TreebankDataset(Dataset):
         Given an index compute the sentence and rule id
         :param: idx
         """
+        if self._train:
+            offset = 0
+        else:
+            offset = self._buckets[self._samples][0]
+
         for bucket in self._buckets:
-            if idx in range(*bucket):
+            if idx + offset in range(*bucket):
                 sId = self._buckets.index(bucket)
 
-        return sId, idx - self._buckets[sId][0]
+        return sId, idx + offset - self._buckets[sId][0]
 
     def __len__(self):
         """
         Returns length of dataset, that is, number of sentences
         """
-        return self._size
+        if self._train:
+            return self._buckets[self._samples - 1][1]
+        else:
+            return self._buckets[-1][1] - self._buckets[self._samples - 1][1]
 
     def __getitem__(self, idx):
         """
@@ -242,5 +251,5 @@ class TreebankDataset(Dataset):
         return sentence
 
 if __name__=="__main__":
-    treebank = TreebankDataset("../parsed/wsj_{0:04}.prd")
+    treebank = TreebankDataset(train=False)
     print("Loaded treebank with {} sentences.".format(len(treebank._sentences)))

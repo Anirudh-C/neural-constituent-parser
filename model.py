@@ -5,9 +5,10 @@ class Score(nn.Module):
     """
     Score model to score each rule and span in treebank for parsing
     """
-    def __init__(self):
+    def __init__(self, device):
         super(Score, self).__init__()
-        self._ruleWeights = nn.Linear(26, 16)
+        self._device = device
+        self._ruleWeights = nn.Linear(26, 16).to(self._device)
         self._wordWeights = nn.Sequential(nn.Linear(2048, 512),
                                           nn.ReLU(),
                                           nn.Linear(512, 128),
@@ -15,7 +16,7 @@ class Score(nn.Module):
                                           nn.Linear(128, 32),
                                           nn.ReLU(),
                                           nn.Linear(32, 16),
-                                          nn.ReLU())
+                                          nn.ReLU()).to(self._device)
 
     def forward(self, x):
         """
@@ -23,7 +24,7 @@ class Score(nn.Module):
         """
         words = x[:,0,:]
         rules = x[:,1,4:30]
-        return torch.sum(torch.addcmul(torch.zeros(16, dtype=torch.float),
+        return torch.sum(torch.addcmul(torch.zeros(16, dtype=torch.float).to(self._device),
                                        self._wordWeights(words),
                                        self._ruleWeights(rules)), 1)
 
@@ -33,7 +34,7 @@ def treeLoss(scores):
     The training loss is the negative sum of the scores for all the spans
     in a given batch.
     """
-    return - torch.sum(scores)
+    return - torch.sum(torch.abs(scores))
 
 if __name__=="__main__":
     from data import TreebankDataset
