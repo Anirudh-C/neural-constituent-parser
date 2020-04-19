@@ -13,7 +13,7 @@ def log(string):
     with open('logs/run.log', 'a') as logFile:
         print(string, file=logFile)
 
-def train(batches=50, epochs=5, split=0.8, samples=2000, cuda=True):
+def train(args):
     """
     Train the score function over treebank
     :param: batches (default = 50)
@@ -22,6 +22,12 @@ def train(batches=50, epochs=5, split=0.8, samples=2000, cuda=True):
     :param: samples (default = 2000) - number of samples to train on in treebank
     :param: cuda (default = True)
     """
+    batches = args.batches
+    epochs = args.epochs
+    split = args.split
+    samples = args.samples
+    cuda = args.cuda
+
     # Create train test split
     treebank = TreebankDataset(train=True, samples=samples)
     trainSize = int(split * len(treebank))
@@ -80,4 +86,12 @@ def train(batches=50, epochs=5, split=0.8, samples=2000, cuda=True):
         torch.save(model.state_dict(), 'models/run.pt')
 
 if __name__ == "__main__":
-    train()
+    import argparse
+    parser = argparse.ArgumentParser(description="Train score function")
+    parser.add_argument('--batches', action="store", dest="batches", type=int, default=50)
+    parser.add_argument('--epochs', action="store", dest="epochs", type=int, default=5)
+    parser.add_argument('--split', action="store", dest="split", type=float, default=0.8)
+    parser.add_argument('--samples', action="store", dest="samples", type=int, default=2000)
+    parser.add_argument('--cuda', action="store_true", dest="cuda", default=True)
+    args = parser.parse_args()
+    train(args)
