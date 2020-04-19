@@ -8,7 +8,7 @@ class Score(nn.Module):
     def __init__(self, device):
         super(Score, self).__init__()
         self._device = device
-        self._ruleWeights = nn.Linear(26, 16).to(self._device)
+        self._ruleWeights = nn.Linear(30, 16).to(self._device)
         self._wordWeights = nn.Sequential(nn.Linear(2048, 512),
                                           nn.ReLU(),
                                           nn.Linear(512, 128),
@@ -18,26 +18,15 @@ class Score(nn.Module):
                                           nn.Linear(32, 16),
                                           nn.ReLU()).to(self._device)
 
-        # self._init_weights()
-
-    def _init_weights(self):
-        nn.init.constant_(self._ruleWeights.weight, 0.0)
-        nn.init.constant_(self._ruleWeights.bias, 0.0)
-
-        for module in self._wordWeights:
-            if isinstance(module, nn.Linear):
-                nn.init.normal_(module.weight, mean=0.0, std=0.01)
-                nn.init.constant_(module.bias, 0.0)
-
     def forward(self, x):
         """
         In a forward step compute the score for a batch
         """
         words = x[:,0,:]
-        rules = x[:,1,4:30]
-        return torch.sum(torch.addcmul(torch.zeros(16, dtype=torch.float).to(self._device),
-                                       self._wordWeights(words),
-                                       self._ruleWeights(rules)), 1)
+        rules = x[:,1,:30]
+        return nn.ReLU6()(torch.sum(torch.addcmul(torch.zeros(16, dtype=torch.float).to(self._device),
+                                                  self._wordWeights(words),
+                                                  self._ruleWeights(rules)), 1))
 
 
 def treeLoss(scores):

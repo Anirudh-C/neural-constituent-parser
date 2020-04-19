@@ -83,7 +83,7 @@ def train(args):
         print("[%d %d] val loss: %.3f" %
               (epoch+1, epochs, testLoss / testSize))
 
-        torch.save(model.state_dict(), 'models/run.pt')
+        torch.save(model.state_dict(), 'models/run-' + str(epoch+1) + '.pt')
 
 if __name__ == "__main__":
     import argparse
