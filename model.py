@@ -18,6 +18,17 @@ class Score(nn.Module):
                                           nn.Linear(32, 16),
                                           nn.ReLU()).to(self._device)
 
+        # self._init_weights()
+
+    def _init_weights(self):
+        nn.init.constant_(self._ruleWeights.weight, 0.0)
+        nn.init.constant_(self._ruleWeights.bias, 0.0)
+
+        for module in self._wordWeights:
+            if isinstance(module, nn.Linear):
+                nn.init.normal_(module.weight, mean=0.0, std=0.01)
+                nn.init.constant_(module.bias, 0.0)
+
     def forward(self, x):
         """
         In a forward step compute the score for a batch
@@ -34,19 +45,18 @@ def treeLoss(scores):
     The training loss is the negative sum of the scores for all the spans
     in a given batch.
     """
-    return - torch.sum(torch.abs(scores))
+    return - torch.sum(scores)
 
 if __name__=="__main__":
     from data import TreebankDataset
-    from torch.utils.data import DataLoader
 
     treebank = TreebankDataset()
-    treebankLoader = DataLoader(treebank, batch_size=4, shuffle=False)
 
-    scoreFunc = Score()
-    for i, batch in enumerate(treebankLoader):
+    scoreFunc = Score(torch.device("cpu"))
+    for i, batch in enumerate(treebank):
         if i == 1:
             break
         scores = scoreFunc(batch.to(dtype=torch.float))
         loss = treeLoss(scores)
+        print(loss)
         print(scores, loss)

@@ -5,6 +5,7 @@ import re
 import itertools
 
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 from allennlp.commands.elmo import ElmoEmbedder
 
@@ -16,7 +17,7 @@ class TreebankDataset(Dataset):
     """
     Penn Treebank Dataset that returns (s,r) for each sentence
     """
-    def __init__(self, train=True, pathString="../parsed/wsj_{0:04}.prd", computeVecs=False):
+    def __init__(self, train=True, samples=5, pathString="../parsed/wsj_{0:04}.prd", computeVecs=False):
         """
         Initiates ground truth for PTB after removing function labels, null values
         and converting to CNF
@@ -29,7 +30,7 @@ class TreebankDataset(Dataset):
         self.filterSentences(list(sentences))
 
         # Number of train samples
-        self._samples = 900
+        self._samples = samples
 
         print("Filtered Dataset")
 
@@ -44,12 +45,6 @@ class TreebankDataset(Dataset):
 
         self._spans = [self.getSpanIndices(self.getSpans(sent), sent.leaves()) for sent in self._sentences]
         print("Computed spans")
-
-        # Compute buckets
-        self._buckets = [(0, len(self._spans[0]))]
-        for i in range(1, len(self._sentences)):
-            self._buckets.append((self._buckets[i-1][1],
-                                       self._buckets[i-1][1] + len(self._spans[i])))
 
         print("Loading ELMo Embeddings...")
         self.elmo = ElmoEmbedder()
@@ -70,48 +65,38 @@ class TreebankDataset(Dataset):
                 labels = labels + self.getLabel(subtree)
         return labels
 
-    def getSRId(self, idx):
-        """
-        Given an index compute the sentence and rule id
-        :param: idx
-        """
-        if self._train:
-            offset = 0
-        else:
-            offset = self._buckets[self._samples][0]
-
-        for bucket in self._buckets:
-            if idx + offset in range(*bucket):
-                sId = self._buckets.index(bucket)
-
-        return sId, idx + offset - self._buckets[sId][0]
-
     def __len__(self):
         """
         Returns length of dataset, that is, number of sentences
         """
         if self._train:
-            return self._buckets[self._samples - 1][1]
+            return self._samples
         else:
-            return self._buckets[-1][1] - self._buckets[self._samples - 1][1]
+            return len(self._sentences) - self._samples
 
     def __getitem__(self, idx):
         """
         Returns an element from the ground truth, that is, a sentence in (s,r) form.
         """
-        sId, rId = self.getSRId(idx)
+        if not self._train:
+            idx = idx + self._samples
 
-        span = np.zeros(2048)
-        span[:4] = self._spans[sId][rId]
-        span[4:30] = self._rules[sId][rId]
+        numSpans = len(self._spans[idx])
+        sentence = np.zeros((numSpans, 2, 2048))
+        for i in range(numSpans):
+            span = np.zeros(2048)
+            span[:4] = self._spans[idx][i]
+            span[4:30] = self._rules[idx][i]
 
-        if self._computeVecs:
-            wordVecs = spanRepresentation(self._wordVectors[sId], self._spans[sId][rId])
-        else:
-            wordVecs = spanRepresentation(self.elmo.embed_sentence(self._sentences[sId].leaves())[2],
-                                          self._spans[sId][rId])
+            if self._computeVecs:
+                wordVecs = spanRepresentation(self._wordVectors[idx], self._spans[idx][i])
+            else:
+                wordVecs = spanRepresentation(self.elmo.embed_sentence(self._sentences[idx].leaves())[2],
+                                              self._spans[idx][i])
 
-        return np.stack((wordVecs, span))
+            sentence[i] = np.stack((wordVecs, span))
+
+        return sentence
 
     # Functions to encode the input
     def oneHotEncode(self, label):
@@ -250,6 +235,13 @@ class TreebankDataset(Dataset):
                     sentence[i] = self.removeNulls(child)
         return sentence
 
+def tree_collate(batch):
+    """
+    Custom collate function for DataLoader
+    """
+    return torch.as_tensor(np.concatenate(batch, axis=0))
+
 if __name__=="__main__":
-    treebank = TreebankDataset(train=False)
+    treebank = TreebankDataset(train=False, samples=6)
     print("Loaded treebank with {} sentences.".format(len(treebank._sentences)))
+
