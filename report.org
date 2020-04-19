@@ -65,8 +65,8 @@ The values we choose for $a,b,c$ are $3^0, 3^1$ and $3^9$.
 For a given sentence $w$, the parse tree $T$ is conditioned on the sentence as follows:
 \[P(T|w;W_1,W_2) \propto e^{{\displaystyle \sum_{(r,s) \in T}score(w,s,r;W_1,W_2)}}\]
 
-Thus, we can learn the weights using a negative log-likelihood objective.
-\[L(W_1,W_2) = - \sum_{d=1}^D \sum_{(r,s) \in T_d} score(w_d,s,r;W_1,W_2)\]
+Thus, we can learn the weights using the log-likelihood of the conditional distribution
+\[L(W_1,W_2) = \sum_{d=1}^D \sum_{(r,s) \in T_d} score(w_d,s,r;W_1,W_2)\]
 where, $D$ is the number of samples in the training dataset and $T_d, w_d$ are sample ground truths.
 
 We model the weight matrices $W_1$ and $W_2$ as multilayer perceptrons. We use backpropagation to 
